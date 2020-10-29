@@ -40,6 +40,7 @@
 #include "sesman.h"
 #include "libscp_types.h"
 #include "xauth.h"
+#include "sessionrecord.h"
 #include "xrdp_sockets.h"
 
 #ifndef PR_SET_NO_NEW_PRIVS
@@ -516,6 +517,7 @@ session_start_fork(tbus data, tui8 type, struct SCP_CONNECTION *c,
              */
         }
 #endif
+        utmp_login(g_getpid(), display, s->username, s->client_ip);
         window_manager_pid = g_fork(); /* parent becomes X,
                              child forks wm, and waits, todo */
         if (window_manager_pid == -1)
@@ -949,8 +951,8 @@ session_kill(int pid)
         {
             /* deleting the session */
             log_message(LOG_LEVEL_INFO, "++ terminated session:  username %s, display :%d.0, session_pid %d, ip %s", tmp->item->name, tmp->item->display, tmp->item->pid, tmp->item->client_ip);
+            utmp_logout(tmp->item->pid, tmp->item->display, tmp->item->name, tmp->item->client_ip);
             g_free(tmp->item);
-
             if (prev == 0)
             {
                 /* prev does no exist, so it's the first element - so we set
