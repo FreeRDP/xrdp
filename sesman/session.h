@@ -77,6 +77,12 @@ struct session_item
   struct session_date idle_time;
   char client_ip[256];
   tui8 guid[16];
+
+#ifndef DONT_USE_SHM
+  /* used for shared memory */
+  int    shm_is_allocated;
+  int    shm_heartbeat_time;
+#endif
 };
 
 struct session_chain

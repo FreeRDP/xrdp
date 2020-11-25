@@ -29,6 +29,9 @@
  *
  */
 
+//#define DONT_USE_SHM
+//#define DEBUG_SESSION_LOCK
+
 #if defined(HAVE_CONFIG_H)
 #include "config_ac.h"
 #endif
@@ -37,10 +40,12 @@
 #include <sys/prctl.h>
 #endif
 
+#include "sesshm.h"
 #include "sesman.h"
 #include "libscp_types.h"
 #include "xauth.h"
 #include "xrdp_sockets.h"
+#include "thread_calls.h"
 
 #ifndef PR_SET_NO_NEW_PRIVS
 #define PR_SET_NO_NEW_PRIVS 38
@@ -53,6 +58,8 @@ struct session_chain *g_sessions;
 int g_session_count;
 
 extern tbus g_term_event; /* in sesman.c */
+extern int g_pid;         /* in sesman.c */
+
 
 /**
  * Creates a string consisting of all parameters that is hosted in the param list
@@ -97,8 +104,6 @@ session_get_bydata(const char *name, int width, int height, int bpp, int type,
     struct session_chain *tmp;
     enum SESMAN_CFG_SESS_POLICY policy = g_cfg->sess.policy;
 
-    tmp = g_sessions;
-
     /* convert from SCP_SESSION_TYPE namespace to SESMAN_SESSION_TYPE namespace */
     switch (type)
     {
@@ -120,6 +125,9 @@ session_get_bydata(const char *name, int width, int height, int bpp, int type,
             "session_get_bydata: search policy %d U %s W %d H %d bpp %d T %d IP %s",
             policy, name, width, height, bpp, type, client_ip);
 #endif
+
+    sesshm_lock();
+    tmp = g_sessions;
 
     while (tmp != 0)
     {
@@ -143,11 +151,13 @@ session_get_bydata(const char *name, int width, int height, int bpp, int type,
             tmp->item->bpp == bpp &&
             tmp->item->type == type)
         {
+            sesshm_unlock();
             return tmp->item;
         }
 
         tmp = tmp->next;
     }
+    sesshm_unlock();
 
     return 0;
 }
@@ -274,6 +284,7 @@ session_is_display_in_chain(int display)
     struct session_chain *chain;
     struct session_item *item;
 
+    sesshm_lock();
     chain = g_sessions;
 
     while (chain != 0)
@@ -282,11 +293,13 @@ session_is_display_in_chain(int display)
 
         if (item->display == display)
         {
+            sesshm_unlock();
             return 1;
         }
 
         chain = chain->next;
     }
+    sesshm_unlock();
 
     return 0;
 }
@@ -356,6 +369,8 @@ session_start_chansrv(char *username, int display)
     chansrv_pid = g_fork();
     if (chansrv_pid == 0)
     {
+        session_close_shared();
+
         chansrv_params = list_create();
         chansrv_params->auto_free = 1;
 
@@ -434,7 +449,7 @@ session_start_fork(tbus data, tui8 type, struct SCP_CONNECTION *c,
         return 0;
     }
 
-    temp->item = (struct session_item *)g_malloc(sizeof(struct session_item), 0);
+    temp->item = alloc_session_item();
 
     if (temp->item == 0)
     {
@@ -448,7 +463,9 @@ session_start_fork(tbus data, tui8 type, struct SCP_CONNECTION *c,
 
     if (display == 0)
     {
-        g_free(temp->item);
+        sesshm_lock();
+        free_session_item(temp->item);
+        sesshm_unlock();
         g_free(temp);
         return 0;
     }
@@ -523,6 +540,7 @@ session_start_fork(tbus data, tui8 type, struct SCP_CONNECTION *c,
         }
         else if (window_manager_pid == 0)
         {
+            session_close_shared();
             wait_for_xserver(display);
             env_set_user(s->username,
                          0,
@@ -623,6 +641,7 @@ session_start_fork(tbus data, tui8 type, struct SCP_CONNECTION *c,
             }
             else if (display_pid == 0) /* child */
             {
+                session_close_shared();
                 if (type == SESMAN_SESSION_TYPE_XVNC)
                 {
                     env_set_user(s->username,
@@ -821,6 +840,10 @@ session_start_fork(tbus data, tui8 type, struct SCP_CONNECTION *c,
                 g_sigterm(display_pid);
                 g_sigterm(chansrv_pid);
                 cleanup_sockets(display);
+                sesshm_lock();
+                free_session_item(temp->item);
+                sesshm_unlock();
+                session_close_shared();
                 g_deinit();
                 g_exit(0);
             }
@@ -851,14 +874,22 @@ session_start_fork(tbus data, tui8 type, struct SCP_CONNECTION *c,
         temp->item->type = type;
         temp->item->status = SESMAN_SESSION_STATUS_ACTIVE;
 
+#ifndef DONT_USE_SHM
+        temp->item->shm_heartbeat_time = g_time1();
+#endif
+
+        sesshm_lock();
         temp->next = g_sessions;
         g_sessions = temp;
         g_session_count++;
+        sesshm_unlock();
 
         return display;
     }
 
-    g_free(temp->item);
+    sesshm_lock();
+    free_session_item(temp->item);
+    sesshm_unlock();
     g_free(temp);
     return display;
 }
@@ -921,6 +952,7 @@ session_kill(int pid)
     struct session_chain *tmp;
     struct session_chain *prev;
 
+    sesshm_lock();
     tmp = g_sessions;
     prev = 0;
 
@@ -942,14 +974,15 @@ session_kill(int pid)
                 prev->next = tmp->next;
             }
 
+            sesshm_unlock();
             return SESMAN_SESSION_KILL_NULLITEM;
         }
 
         if (tmp->item->pid == pid)
         {
             /* deleting the session */
-            log_message(LOG_LEVEL_INFO, "++ terminated session:  username %s, display :%d.0, session_pid %d, ip %s", tmp->item->name, tmp->item->display, tmp->item->pid, tmp->item->client_ip);
-            g_free(tmp->item);
+            log_message(LOG_LEVEL_INFO, "++ terminated session (received SIGCHLD):  username %s, display :%d.0, session_pid %d, ip %s", tmp->item->name, tmp->item->display, tmp->item->pid, tmp->item->client_ip);
+            free_session_item(tmp->item);
 
             if (prev == 0)
             {
@@ -964,6 +997,7 @@ session_kill(int pid)
 
             g_free(tmp);
             g_session_count--;
+            sesshm_unlock();
             return SESMAN_SESSION_KILL_OK;
         }
 
@@ -971,6 +1005,7 @@ session_kill(int pid)
         prev = tmp;
         tmp = tmp->next;
     }
+    sesshm_unlock();
 
     return SESMAN_SESSION_KILL_NOTFOUND;
 }
@@ -981,6 +1016,7 @@ session_sigkill_all(void)
 {
     struct session_chain *tmp;
 
+    sesshm_lock();
     tmp = g_sessions;
 
     while (tmp != 0)
@@ -998,6 +1034,7 @@ session_sigkill_all(void)
         /* go on */
         tmp = tmp->next;
     }
+    sesshm_unlock();
 }
 
 /******************************************************************************/
@@ -1015,12 +1052,14 @@ session_get_bypid(int pid)
         return 0;
     }
 
+    sesshm_lock();
     tmp = g_sessions;
 
     while (tmp != 0)
     {
         if (tmp->item == 0)
         {
+            sesshm_unlock();
             log_message(LOG_LEVEL_ERROR, "session descriptor for "
                         "pid %d is null!", pid);
             g_free(dummy);
@@ -1030,12 +1069,14 @@ session_get_bypid(int pid)
         if (tmp->item->pid == pid)
         {
             g_memcpy(dummy, tmp->item, sizeof(struct session_item));
+            sesshm_unlock();
             return dummy;
         }
 
         /* go on */
         tmp = tmp->next;
     }
+    sesshm_unlock();
 
     g_free(dummy);
     return 0;
@@ -1052,6 +1093,7 @@ session_get_byuser(const char *user, int *cnt, unsigned char flags)
 
     count = 0;
 
+    sesshm_lock();
     tmp = g_sessions;
 
     while (tmp != 0)
@@ -1073,6 +1115,7 @@ session_get_byuser(const char *user, int *cnt, unsigned char flags)
         /* go on */
         tmp = tmp->next;
     }
+    sesshm_unlock();
 
     if (count == 0)
     {
@@ -1089,6 +1132,7 @@ session_get_byuser(const char *user, int *cnt, unsigned char flags)
         return 0;
     }
 
+    sesshm_lock();
     tmp = g_sessions;
     index = 0;
 
@@ -1136,6 +1180,7 @@ session_get_byuser(const char *user, int *cnt, unsigned char flags)
         /* go on */
         tmp = tmp->next;
     }
+    sesshm_unlock();
 
     (*cnt) = count;
     return sess;
