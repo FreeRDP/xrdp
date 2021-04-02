@@ -25,12 +25,7 @@
 #include "xup.h"
 #include "log.h"
 #include "trans.h"
-
-#define LOG_LEVEL 1
-#define LLOG(_level, _args) \
-    do { if (_level < LOG_LEVEL) { g_write _args ; } } while (0)
-#define LLOGLN(_level, _args) \
-    do { if (_level < LOG_LEVEL) { g_writeln _args ; } } while (0)
+#include "string_calls.h"
 
 static int
 lib_mod_process_message(struct mod *mod, struct stream *s);
@@ -47,11 +42,11 @@ lib_send_copy(struct mod *mod, struct stream *s)
 int
 lib_mod_start(struct mod *mod, int w, int h, int bpp)
 {
-    LIB_DEBUG(mod, "in lib_mod_start");
+    LOG_DEVEL(LOG_LEVEL_TRACE, "in lib_mod_start");
     mod->width = w;
     mod->height = h;
     mod->bpp = bpp;
-    LIB_DEBUG(mod, "out lib_mod_start");
+    LOG_DEVEL(LOG_LEVEL_TRACE, "out lib_mod_start");
     return 0;
 }
 
@@ -67,17 +62,17 @@ lib_mod_log_peer(struct mod *mod)
     my_pid = g_getpid();
     if (g_sck_get_peer_cred(mod->trans->sck, &pid, &uid, &gid) == 0)
     {
-        log_message(LOG_LEVEL_INFO, "lib_mod_log_peer: xrdp_pid=%d connected "
-                    "to X11rdp_pid=%d X11rdp_uid=%d X11rdp_gid=%d "
-                    "client_ip=%s client_port=%s",
-                    my_pid, pid, uid, gid,
-                    mod->client_info.client_addr,
-                    mod->client_info.client_port);
+        LOG(LOG_LEVEL_INFO, "lib_mod_log_peer: xrdp_pid=%d connected "
+            "to X11rdp_pid=%d X11rdp_uid=%d X11rdp_gid=%d "
+            "client_ip=%s client_port=%s",
+            my_pid, pid, uid, gid,
+            mod->client_info.client_addr,
+            mod->client_info.client_port);
     }
     else
     {
-        log_message(LOG_LEVEL_ERROR, "lib_mod_log_peer: g_sck_get_peer_cred "
-                    "failed");
+        LOG(LOG_LEVEL_ERROR, "lib_mod_log_peer: g_sck_get_peer_cred "
+            "failed");
     }
     return 0;
 }
@@ -90,7 +85,7 @@ lib_data_in(struct trans *trans)
     struct stream *s;
     int len;
 
-    LLOGLN(10, ("lib_data_in:"));
+    LOG_DEVEL(LOG_LEVEL_TRACE, "lib_data_in:");
     if (trans == 0)
     {
         return 1;
@@ -112,7 +107,7 @@ lib_data_in(struct trans *trans)
             in_uint32_le(s, len);
             if (len < 0 || len > 128 * 1024)
             {
-                g_writeln("lib_data_in: bad size");
+                LOG(LOG_LEVEL_ERROR, "lib_data_in: bad size");
                 return 1;
             }
             if (len > 0)
@@ -121,12 +116,12 @@ lib_data_in(struct trans *trans)
                 trans->extra_flags = 2;
                 break;
             }
-            /* fall through */
+        /* fall through */
         case 2:
             s->p = s->data;
             if (lib_mod_process_message(self, s) != 0)
             {
-                g_writeln("lib_data_in: lib_mod_process_message failed");
+                LOG(LOG_LEVEL_ERROR, "lib_data_in: lib_mod_process_message failed");
                 return 1;
             }
             init_stream(s, 0);
@@ -149,9 +144,6 @@ lib_mod_connect(struct mod *mod)
     int use_uds;
     struct stream *s;
     char con_port[256];
-    struct source_info *si;
-
-    LIB_DEBUG(mod, "in lib_mod_connect");
 
     mod->server_msg(mod, "started connecting", 0);
 
@@ -160,14 +152,12 @@ lib_mod_connect(struct mod *mod)
     {
         mod->server_msg(mod,
                         "error - only supporting 8, 15, 16, 24, and 32 bpp rdp connections", 0);
-        LIB_DEBUG(mod, "out lib_mod_connect error");
         return 1;
     }
 
     if (g_strcmp(mod->ip, "") == 0)
     {
         mod->server_msg(mod, "error - no ip set", 0);
-        LIB_DEBUG(mod, "out lib_mod_connect error");
         return 1;
     }
 
@@ -186,6 +176,7 @@ lib_mod_connect(struct mod *mod)
 
     if (use_uds)
     {
+        LOG(LOG_LEVEL_INFO, "lib_mod_connect: connecting via UNIX socket");
         mod->trans = trans_create(TRANS_MODE_UNIX, 8 * 8192, 8192);
         if (mod->trans == 0)
         {
@@ -195,6 +186,7 @@ lib_mod_connect(struct mod *mod)
     }
     else
     {
+        LOG(LOG_LEVEL_INFO, "lib_mod_connect: connecting via TCP socket");
         mod->trans = trans_create(TRANS_MODE_TCP, 8 * 8192, 8192);
         if (mod->trans == 0)
         {
@@ -203,8 +195,7 @@ lib_mod_connect(struct mod *mod)
         }
     }
 
-    si = (struct source_info *) (mod->si);
-    mod->trans->si = si;
+    mod->trans->si = mod->si;
     mod->trans->my_source = XRDP_SOURCE_MOD;
 
     while (1)
@@ -215,9 +206,9 @@ lib_mod_connect(struct mod *mod)
         error = -1;
         if (trans_connect(mod->trans, mod->ip, con_port, 3000) == 0)
         {
-            LLOGLN(0, ("lib_mod_connect: connected to Xserver "
-                   "(Xorg or X11rdp) sck %lld",
-                   (long long) (mod->trans->sck)));
+            LOG_DEVEL(LOG_LEVEL_INFO, "lib_mod_connect: connected to Xserver "
+                      "(Xorg or X11rdp) sck %lld",
+                      (long long) (mod->trans->sck));
             error = 0;
         }
 
@@ -315,7 +306,6 @@ lib_mod_connect(struct mod *mod)
         trans_delete(mod->trans);
         mod->trans = 0;
         mod->server_msg(mod, "some problem", 0);
-        LIB_DEBUG(mod, "out lib_mod_connect error");
         return 1;
     }
     else
@@ -328,7 +318,7 @@ lib_mod_connect(struct mod *mod)
         mod->trans->extra_flags = 1;
     }
 
-    LIB_DEBUG(mod, "out lib_mod_connect");
+    LOG_DEVEL(LOG_LEVEL_TRACE, "out lib_mod_connect");
     return 0;
 }
 
@@ -343,7 +333,7 @@ lib_mod_event(struct mod *mod, int msg, tbus param1, tbus param2,
     int key;
     int rv;
 
-    LIB_DEBUG(mod, "in lib_mod_event");
+    LOG_DEVEL(LOG_LEVEL_TRACE, "in lib_mod_event");
     make_stream(s);
 
     if ((msg >= 15) && (msg <= 16)) /* key events */
@@ -356,7 +346,7 @@ lib_mod_event(struct mod *mod, int msg, tbus param1, tbus param2,
             {
                 if (mod->shift_state)
                 {
-                    g_writeln("special");
+                    LOG_DEVEL(LOG_LEVEL_TRACE, "special");
                     /* fix for mstsc sending left control down with altgr */
                     /* control down / up
                     msg param1 param2 param3 param4
@@ -399,7 +389,7 @@ lib_mod_event(struct mod *mod, int msg, tbus param1, tbus param2,
     out_uint32_le(s, len);
     rv = lib_send_copy(mod, s);
     free_stream(s);
-    LIB_DEBUG(mod, "out lib_mod_event");
+    LOG_DEVEL(LOG_LEVEL_TRACE, "out lib_mod_event");
     return rv;
 }
 
@@ -784,7 +774,7 @@ process_server_window_delete(struct mod *mod, struct stream *s)
 /******************************************************************************/
 /* return error */
 static int
-process_server_window_show(struct mod* mod, struct stream* s)
+process_server_window_show(struct mod *mod, struct stream *s)
 {
     int window_id;
     int rv;
@@ -1099,7 +1089,7 @@ process_server_paint_rect_shmem(struct mod *amod, struct stream *s)
     {
         amod->screen_shmem_id = shmem_id;
         amod->screen_shmem_pixels = (char *) g_shmat(amod->screen_shmem_id);
-        if (amod->screen_shmem_pixels == (void*)-1)
+        if (amod->screen_shmem_pixels == (void *) -1)
         {
             /* failed */
             amod->screen_shmem_id = 0;
@@ -1116,7 +1106,7 @@ process_server_paint_rect_shmem(struct mod *amod, struct stream *s)
         amod->screen_shmem_id = shmem_id;
         g_shmdt(amod->screen_shmem_pixels);
         amod->screen_shmem_pixels = (char *) g_shmat(amod->screen_shmem_id);
-        if (amod->screen_shmem_pixels == (void*)-1)
+        if (amod->screen_shmem_pixels == (void *) -1)
         {
             /* failed */
             amod->screen_shmem_id = 0;
@@ -1250,7 +1240,7 @@ process_server_paint_rect_shmem_ex(struct mod *amod, struct stream *s)
         {
             amod->screen_shmem_id = shmem_id;
             amod->screen_shmem_pixels = (char *) g_shmat(amod->screen_shmem_id);
-            if (amod->screen_shmem_pixels == (void*)-1)
+            if (amod->screen_shmem_pixels == (void *) -1)
             {
                 /* failed */
                 amod->screen_shmem_id = 0;
@@ -1267,7 +1257,7 @@ process_server_paint_rect_shmem_ex(struct mod *amod, struct stream *s)
             amod->screen_shmem_id = shmem_id;
             g_shmdt(amod->screen_shmem_pixels);
             amod->screen_shmem_pixels = (char *) g_shmat(amod->screen_shmem_id);
-            if (amod->screen_shmem_pixels == (void*)-1)
+            if (amod->screen_shmem_pixels == (void *) -1)
             {
                 /* failed */
                 amod->screen_shmem_id = 0;
@@ -1293,7 +1283,7 @@ process_server_paint_rect_shmem_ex(struct mod *amod, struct stream *s)
         rv = 1;
     }
 
-    //g_writeln("frame_id %d", frame_id);
+    //LOG_DEVEL(LOG_LEVEL_TRACE, "frame_id %d", frame_id);
     //send_paint_rect_ex_ack(amod, flags, frame_id);
 
     g_free(lcrects);
@@ -1309,7 +1299,7 @@ lib_mod_process_orders(struct mod *mod, int type, struct stream *s)
 {
     int rv;
 
-    LLOGLN(10, ("lib_mod_process_orders: type %d", type));
+    LOG_DEVEL(LOG_LEVEL_DEBUG, "lib_mod_process_orders: type %d", type);
     rv = 0;
     switch (type)
     {
@@ -1404,7 +1394,7 @@ lib_mod_process_orders(struct mod *mod, int type, struct stream *s)
             rv = process_server_paint_rect_shmem_ex(mod, s);
             break;
         default:
-            g_writeln("lib_mod_process_orders: unknown order type %d", type);
+            LOG_DEVEL(LOG_LEVEL_WARNING, "lib_mod_process_orders: unknown order type %d", type);
             rv = 0;
             break;
     }
@@ -1419,7 +1409,7 @@ lib_send_client_info(struct mod *mod)
     struct stream *s;
     int len;
 
-    g_writeln("lib_send_client_info:");
+    LOG_DEVEL(LOG_LEVEL_TRACE, "lib_send_client_info:");
     make_stream(s);
     init_stream(s, 8192);
     s_push_layer(s, iso_hdr, 4);
@@ -1447,14 +1437,14 @@ lib_mod_process_message(struct mod *mod, struct stream *s)
     int type;
     char *phold;
 
-    LLOGLN(10, ("lib_mod_process_message:"));
+    LOG_DEVEL(LOG_LEVEL_TRACE, "lib_mod_process_message:");
     rv = 0;
     if (rv == 0)
     {
         in_uint16_le(s, type);
         in_uint16_le(s, num_orders);
         in_uint32_le(s, len);
-        LLOGLN(10, ("lib_mod_process_message: type %d", type));
+        LOG_DEVEL(LOG_LEVEL_TRACE, "lib_mod_process_message: type %d", type);
 
         if (type == 1) /* original order list */
         {
@@ -1471,7 +1461,7 @@ lib_mod_process_message(struct mod *mod, struct stream *s)
         }
         else if (type == 2) /* caps */
         {
-            g_writeln("lib_mod_process_message: type 2 len %d", len);
+            LOG_DEVEL(LOG_LEVEL_TRACE, "lib_mod_process_message: type 2 len %d", len);
             for (index = 0; index < num_orders; index++)
             {
                 phold = s->p;
@@ -1481,7 +1471,7 @@ lib_mod_process_message(struct mod *mod, struct stream *s)
                 switch (type)
                 {
                     default:
-                        g_writeln("lib_mod_process_message: unknown cap type %d len %d",
+                        LOG_DEVEL(LOG_LEVEL_TRACE, "lib_mod_process_message: unknown cap type %d len %d",
                                   type, len);
                         break;
                 }
@@ -1510,7 +1500,7 @@ lib_mod_process_message(struct mod *mod, struct stream *s)
         }
         else
         {
-            g_writeln("unknown type %d", type);
+            LOG_DEVEL(LOG_LEVEL_TRACE, "unknown type %d", type);
         }
     }
 
@@ -1522,7 +1512,7 @@ lib_mod_process_message(struct mod *mod, struct stream *s)
 int
 lib_mod_signal(struct mod *mod)
 {
-    g_writeln("lib_mod_signal: not used");
+    // no-op
     return 0;
 }
 
@@ -1546,11 +1536,11 @@ lib_mod_set_param(struct mod *mod, const char *name, const char *value)
 {
     if (g_strcasecmp(name, "username") == 0)
     {
-        g_strncpy(mod->username, value, INFO_CLIENT_MAX_CB_LEN-1);
+        g_strncpy(mod->username, value, INFO_CLIENT_MAX_CB_LEN - 1);
     }
     else if (g_strcasecmp(name, "password") == 0)
     {
-        g_strncpy(mod->password, value, INFO_CLIENT_MAX_CB_LEN-1);
+        g_strncpy(mod->password, value, INFO_CLIENT_MAX_CB_LEN - 1);
     }
     else if (g_strcasecmp(name, "ip") == 0)
     {
@@ -1609,7 +1599,7 @@ lib_mod_check_wait_objs(struct mod *mod)
 int
 lib_mod_frame_ack(struct mod *amod, int flags, int frame_id)
 {
-    LLOGLN(10, ("lib_mod_frame_ack: flags 0x%8.8x frame_id %d", flags, frame_id));
+    LOG_DEVEL(LOG_LEVEL_TRACE, "lib_mod_frame_ack: flags 0x%8.8x frame_id %d", flags, frame_id);
     send_paint_rect_ex_ack(amod, flags, frame_id);
     return 0;
 }
@@ -1620,8 +1610,8 @@ int
 lib_mod_suppress_output(struct mod *amod, int suppress,
                         int left, int top, int right, int bottom)
 {
-    LLOGLN(10, ("lib_mod_suppress_output: suppress 0x%8.8x left %d top %d "
-           "right %d bottom %d", suppress, left, top, right, bottom));
+    LOG_DEVEL(LOG_LEVEL_TRACE, "lib_mod_suppress_output: suppress 0x%8.8x left %d top %d "
+              "right %d bottom %d", suppress, left, top, right, bottom);
     send_suppress_output(amod, suppress, left, top, right, bottom);
     return 0;
 }

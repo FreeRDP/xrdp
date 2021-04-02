@@ -2,7 +2,7 @@
 [![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/neutrinolabs/xrdp-questions)
 ![Apache-License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 
-*Current Version:* 0.9.14
+*Current Version:* 0.9.15
 
 # xrdp - an open source RDP server
 
@@ -10,7 +10,7 @@
 
 **xrdp** provides a graphical login to remote machines using Microsoft
 Remote Desktop Protocol (RDP). xrdp accepts connections from a variety of
-RDP clients: FreeRDP, rdesktop, NeutrinoRDP and Microsoft Remote Desktop
+RDP clients: FreeRDP, rdesktop, KRDC, NeutrinoRDP and Microsoft Remote Desktop
 Client (for Windows, Mac OS, iOS and Android).
 
 RDP transport is encrypted using TLS by default.
@@ -31,6 +31,16 @@ RDP transport is encrypted using TLS by default.
  * two-way clipboard transfer (text, bitmap, file)
  * audio redirection ([requires to build additional modules](https://github.com/neutrinolabs/xrdp/wiki/How-to-set-up-audio-redirection))
  * drive redirection (mount local client drives on remote machine)
+
+## Supported Platforms
+
+**xrdp** primarily targets GNU/Linux operating system. x86 (including x86-64)
+and ARM processors are most mature architecture to run xrdp on.
+See also [Platform Support Tier](https://github.com/neutrinolabs/xrdp/wiki/Platform-Support-Tier).
+
+Some components such as xorgxrdp and RemoteFX codec have special optimization
+for x86 using SIMD instructions. So running xrdp on x86 processors will get
+fully accelerated experience.
 
 ## Quick Start
 
@@ -64,20 +74,6 @@ yum install xrdp
 
 `yum` is being replaced with `dnf`, so you may need to use `dnf` instead
 of `yum` in the above commands.
-
-## Environment
-
-**xrdp** primarily targets to GNU/Linux. Tested on x86, x86_64, SPARC and
-PowerPC.
-
-xorgxrdp and RemoteFX Codec have special optimization for x86 and x86_64 using
-SIMD instructions.
-
-FreeBSD is not a primary target of xrdp. It is working on FreeBSD except
-for the drive redirection feature.
-
-Other operating systems such as macOS are not supported so far, but we
-welcome your contributions.
 
 ## Compiling
 
