@@ -1,7 +1,7 @@
 # Process this file with autoconf to produce a configure script
 
 AC_PREREQ(2.65)
-AC_INIT([xrdp], [0.9.15], [xrdp-devel@googlegroups.com])
+AC_INIT([xrdp], [0.9.16], [xrdp-devel@googlegroups.com])
 AC_CONFIG_HEADERS(config_ac.h:config_ac-h.in)
 AM_INIT_AUTOMAKE([1.7.2 foreign])
 AC_CONFIG_MACRO_DIR([m4])
@@ -65,6 +65,10 @@ if test "x$with_systemdsystemunitdir" != xno; then
 fi
 AM_CONDITIONAL(HAVE_SYSTEMD, [test -n "$with_systemdsystemunitdir" -a "x$with_systemdsystemunitdir" != xno ])
 
+AC_ARG_ENABLE(tests,
+              AC_HELP_STRING([--enable-tests],
+              [Ensure dependencies for the tests are installed]),
+              [ensure_tests_deps=yes], [])
 AC_ARG_ENABLE(pam, AS_HELP_STRING([--enable-pam],
               [Build PAM support (default: yes)]),
               [], [enable_pam=yes])
@@ -357,6 +361,24 @@ AC_CHECK_HEADER([X11/extensions/Xrandr.h], [],
 
 CFLAGS="$save_CFLAGS"
 
+# perform unit tests if libcheck found
+if test "x$ensure_tests_deps" == "xyes"; then
+    PKG_CHECK_MODULES([CHECK], [check >= 0.10.0],
+        [perform_unit_tests=yes],
+        [AC_MSG_ERROR([please install check, the unit test framework])])
+else
+    PKG_CHECK_MODULES([CHECK], [check >= 0.10.0],
+        [perform_unit_tests=yes],
+        [perform_unit_tests=no])
+fi
+
+if test "x$perform_unit_tests" == "xyes"; then
+    AC_MSG_NOTICE([libcheck found, unit tests will be performed])
+else
+    AC_MSG_NOTICE([libcheck not found, unit tests will be skipped])
+fi
+# -- end perform unit tests
+
 AC_SUBST([moduledir], '${libdir}/xrdp')
 
 AC_ARG_ENABLE([strict-locations],
@@ -397,6 +419,12 @@ AC_CONFIG_FILES([
   sesman/libscp/Makefile
   sesman/Makefile
   sesman/tools/Makefile
+  tests/Makefile
+  tests/common/Makefile
+  tests/memtest/Makefile
+  tools/Makefile
+  tools/devel/Makefile
+  tools/devel/tcp_proxy/Makefile
   vnc/Makefile
   xrdpapi/Makefile
   xrdp/Makefile
@@ -404,6 +432,7 @@ AC_CONFIG_FILES([
   xup/Makefile
 ])
 
+AC_REQUIRE_AUX_FILE([tap-driver.sh])
 AC_OUTPUT
 
 echo ""
@@ -431,6 +460,8 @@ echo "  exec_prefix             $exec_prefix"
 echo "  libdir                  $libdir"
 echo "  bindir                  $bindir"
 echo "  sysconfdir              $sysconfdir"
+echo ""
+echo "  unit tests performable  $perform_unit_tests"
 echo ""
 echo "  CFLAGS = $CFLAGS"
 echo "  LDFLAGS = $LDFLAGS"

@@ -443,7 +443,15 @@ lxrdp_set_param(struct mod *mod, const char *name, const char *value)
 {
     rdpSettings *settings;
 
-    LOG_DEVEL(LOG_LEVEL_DEBUG, "lxrdp_set_param: name [%s] value [%s]", name, value);
+    if (g_strcmp(name, "password") == 0 || g_strcmp(name, "pampassword") == 0)
+    {
+        LOG_DEVEL(LOG_LEVEL_DEBUG, "lxrdp_set_param: name [%s] value [******]", name);
+    }
+    else
+    {
+        LOG_DEVEL(LOG_LEVEL_DEBUG, "lxrdp_set_param: name [%s] value [%s]", name, value);
+    }
+
     settings = mod->inst->settings;
 
     if (g_strcmp(name, "hostname") == 0)
@@ -491,6 +499,16 @@ lxrdp_set_param(struct mod *mod, const char *name, const char *value)
     else if (g_strcmp(name, "nla") == 0)
     {
         settings->nla_security = g_text2bool(value);
+    }
+    else if (g_strcmp(name, "enable_dynamic_resizing") == 0)
+    {
+        settings->desktop_resize = g_text2bool(value);
+    }
+    else if (g_strcmp(name, "pamusername") == 0 ||
+             g_strcmp(name, "pampassword") == 0 ||
+             g_strcmp(name, "pammsessionmng") == 0)
+    {
+        /* Valid (but unused) parameters not logged */
     }
     else
     {
@@ -596,6 +614,27 @@ lxrdp_suppress_output(struct mod *mod, int suppress,
 #if defined(NEUTRINORDP_HAS_SUPPRESS_OUTPUT)
     mod->inst->SendSuppressOutput(mod->inst, !suppress, left, top, right, bottom);
 #endif
+    return 0;
+}
+
+/******************************************************************************/
+static int
+lxrdp_server_version_message(struct mod *mod)
+{
+    return 0;
+}
+
+/******************************************************************************/
+static int
+lxrdp_server_monitor_resize(struct mod *mod, int width, int height)
+{
+    return 0;
+}
+
+/******************************************************************************/
+static int
+lxrdp_server_monitor_full_invalidate(struct mod *mod, int width, int height)
+{
     return 0;
 }
 
@@ -2074,6 +2113,9 @@ mod_init(void)
     mod->mod_check_wait_objs = lxrdp_check_wait_objs;
     mod->mod_frame_ack = lxrdp_frame_ack;
     mod->mod_suppress_output = lxrdp_suppress_output;
+    mod->mod_server_version_message = lxrdp_server_version_message;
+    mod->mod_server_monitor_resize = lxrdp_server_monitor_resize;
+    mod->mod_server_monitor_full_invalidate = lxrdp_server_monitor_full_invalidate;
 
     mod->inst = freerdp_new();
     mod->inst->PreConnect = lfreerdp_pre_connect;
