@@ -129,16 +129,16 @@ int  scard_send_list_readers(void *user_data,
 int  scard_send_get_status_change(void *user_data,
                                   char *context, int context_bytes,
                                   int wide, tui32 timeout,
-                                  tui32 num_readers, READER_STATE* rsa);
+                                  tui32 num_readers, READER_STATE *rsa);
 
 int  scard_send_connect(void *user_data,
                         char *context, int context_bytes, int wide,
-                        READER_STATE* rs);
+                        READER_STATE *rs);
 
 int  scard_send_reconnect(void *user_data,
                           char *context, int context_bytes,
                           char *card, int card_bytes,
-                          READER_STATE* rs);
+                          READER_STATE *rs);
 
 int  scard_send_begin_transaction(void *user_data,
                                   char *context, int context_bytes,
@@ -153,9 +153,9 @@ int  scard_send_status(void *user_data, int wide,
                        int cchReaderLen, int cbAtrLen,
                        int reader_name_is_null);
 int  scard_send_disconnect(void *user_data,
-                                  char *context, int context_bytes,
-                                  char *card, int card_bytes,
-                                  int dwDisposition);
+                           char *context, int context_bytes,
+                           char *card, int card_bytes,
+                           int dwDisposition);
 
 int  scard_send_transmit(void *user_data,
                          char *context, int context_bytes,
@@ -175,7 +175,7 @@ int  scard_send_cancel(void *user_data,
                        char *context, int context_bytes);
 
 int  scard_send_get_attrib(void *user_data, char *card, int card_bytes,
-                           READER_STATE* rs);
+                           READER_STATE *rs);
 
 /*
  * Notes:
