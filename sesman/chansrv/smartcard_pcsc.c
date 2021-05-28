@@ -578,20 +578,6 @@ scard_function_establish_context_return(void *user_data,
                 "context_bytes %d", context_bytes);
             LOG_DEVEL_HEXDUMP(LOG_LEVEL_TRACE, "", in_s->p, context_bytes);
             return 1;
-            if (uds_client->state == 1)
-            {
-                out_s = uds_client->con->out_s;
-                init_stream(out_s, 8192);
-                out_uint32_le(out_s, 4);
-                out_uint32_le(out_s, 3);
-                out_uint32_le(out_s, 0x80100001); /* result */
-                s_mark_end(out_s);
-                rv = trans_write_copy(uds_client->con);
-                uds_client->state = 0;
-            }
-            uds_client->ref_count--;
-            free_uds_client(uds_client);
-            return rv;
         }
         in_uint8a(in_s, context, context_bytes);
         lcontext = uds_client_add_context(uds_client, context, context_bytes);
@@ -607,9 +593,9 @@ scard_function_establish_context_return(void *user_data,
         {
             out_s = uds_client->con->out_s;
             init_stream(out_s, 8192);
-            out_uint32_le(out_s, 4);
-            out_uint32_le(out_s, 3);
-            out_uint32_le(out_s, 0x80100001); /* result */
+            out_uint32_le(out_s, SCARD_PROTOCOL_RAW); /*header - protocol */
+            out_uint32_le(out_s, 3); /*header - size */
+            out_uint32_le(out_s, SCARD_F_INTERNAL_ERROR); /* result SCARD_F_INTERNAL_ERROR */
             s_mark_end(out_s);
             rv = trans_write_copy(uds_client->con);
             uds_client->state = 0;
@@ -1416,7 +1402,6 @@ struct pcsc_control_struct
     tui32 rv;
 };
 
-#define SCARD_E_UNSUPPORTED_FEATURE 0x8010001F
 /*****************************************************************************/
 /* process but return not supported*/
 int
@@ -1822,16 +1807,16 @@ scard_function_get_status_change_return(void *user_data,
             /* send version back */
             out_s = uds_client->con->out_s;
             init_stream(out_s, 8192);
-            out_uint32_le(out_s, 4);
-            out_uint32_le(out_s, 3);
+            out_uint32_le(out_s, SCARD_PROTOCOL_RAW);
+            out_uint32_le(out_s, 3); /* header - size */
             out_uint32_le(out_s, 0); /* result */
             s_mark_end(out_s);
             rv = trans_write_copy(uds_client->con);
             uds_client->state = 0;
-            return_code = 0x8010000A;
+            return_code = SCARD_E_TIMEOUT;
         }
 
-        if (return_code == (int) 0x8010000A) /* SCARD_E_TIMEOUT */
+        if (return_code == (int) SCARD_E_TIMEOUT) /* SCARD_E_TIMEOUT */
         {
             rsa = g_new(READER_STATE, uds_client->numReaders + 1);
             for (index = 0; index < uds_client->numReaders; index++)
